@@ -102,6 +102,7 @@ class lrc_rs:
         #first_global_parity = reverse.pop()
         #print("poped parity:", first_global_parity)
         print("appended local parities", parity_0, parity_1)
+        
         reverse.append(parity_1)
         reverse.append(parity_0)
 
@@ -176,21 +177,22 @@ class lrc_rs:
         pos_local_second = self.n-1
 
         remain_pos = erasure_pos.copy()
-
+        print('erasure_pos:', erasure_pos)
         # handle local parity px
         # check first if recover from local parities
         pos, val, common0 = self._decode_local_parity(pos_group0, decoded_msg, pos_local_first, erasure_pos)
-        print("laa pos, val", pos, val)
+        print("laa pos, val", pos, val, common0)
         if pos is not None:
             repaired = repaired + 1
             decoded_msg[pos] = val
             remain_pos.remove(pos)
-
+        """
         elif val is None:
             print("can't recovr only from parity")
         else:
             print("No error to fix")
-
+        """
+            
         print("dec message after local parity", decoded_msg)
         # handle local parity px
         #check first if recover from local parities
@@ -199,18 +201,19 @@ class lrc_rs:
             repaired = repaired + 1
             decoded_msg[pos] = val
             remain_pos.remove(pos)
+        """
         else:
             print("can't recovr only from parity") 
-
+        """
         # prepare matrix for decoding remaining errors
         # remaining error >= 2, otherwise we recover from parity
         # so let's use local parities and global parities
 
         # can't recover in following conditions:
-        if len(common0) > self.r:
+        if len(common0) > self.r+1:
             raise ValueError("cant recover, ")
 
-        if len(common1) > self.r:
+        if len(common1) > self.r+1:
             raise ValueError("cant recover, ")
         
         # At this stage there are two remaining errors
@@ -233,7 +236,7 @@ class lrc_rs:
         syndroms = [0] * self.m
         for j in range(self.m):
             for i in range(self.n):
-                print("indexes: ", j , i , msg[i], self.vand_matrix[j][self.n - 1 - i], self.vand_matrix[j][self.n - 1 - i])
+                #print("indexes: ", j , i , msg[i], self.vand_matrix[j][self.n - 1 - i], self.vand_matrix[j][self.n - 1 - i])
                 syndroms[j] = self.gf.add(
                     syndroms[j], self.gf.mul(msg[i], self.vand_matrix[j][self.n - 1 -i])
                 )
@@ -357,7 +360,8 @@ class lrc_rs:
         print("matrix_decode:", matrix_decode)
         print("remain_pos:", remain_pos)
         print("synds_to_use:", synds_to_use)
-
+        print("global_to_use:", global_to_use)
+    
         # Matrix inversion, we call this Vandermonde as we obtain a
         # Vandermonde Matrix, which is reversible
         nb_errors = len(remain_pos)
@@ -368,10 +372,18 @@ class lrc_rs:
             inv_vand_matrix.append(matrix_decode[i].copy())
 
         for i in range(nb_errors):
+            print('i', i, inv_vand_matrix)
             row = inv_vand_matrix[i].copy()
             # normalize
             row_norm = [0] * nb_errors
             print("row:", row)
+            if row[i] == 0:
+                for u in range(nb_errors):
+                    if inv_vand_matrix[u][i] != 0:
+                        for v in range(nb_errors):
+                            row[v] = self.gf.add(row[v], inv_vand_matrix[u][v])
+                        synds[i] = self.gf.add(synds[i], synds[u])
+                        break
             for k in range(nb_errors):
                 print("row:", row[k], row[i])
                 row_norm[k] = self.gf.div(row[k], row[i])
@@ -384,25 +396,27 @@ class lrc_rs:
                     continue
 
                 norm = inv_vand_matrix[i][i]
+                print('norm:', i, j, norm, inv_vand_matrix)
                 for k in range(nb_errors):
                     # print("row:", row[k], row[i])
                     inv_vand_matrix[i][k] = self.gf.div(inv_vand_matrix[i][k], norm)
                 print("nom inv matrix:", inv_vand_matrix)
                 synds[i] = self.gf.div(synds[i], norm)
 
-                for k in range(nb_errors):
-                    inv_vand_matrix[i][k] = self.gf.mul(
-                        inv_vand_matrix[i][k], inv_vand_matrix[j][i]
-                    )
-                synds[i] = self.gf.mul(synds[i], inv_vand_matrix[j][i])
+                if inv_vand_matrix[j][i] != 0:
+                    for k in range(nb_errors):
+                        inv_vand_matrix[i][k] = self.gf.mul(
+                            inv_vand_matrix[i][k], inv_vand_matrix[j][i]
+                        )
+                    synds[i] = self.gf.mul(synds[i], inv_vand_matrix[j][i])
 
-                print("inv_vand_matrix: mult", inv_vand_matrix)
-                for k in range(nb_errors):
-                    inv_vand_matrix[j][k] = self.gf.add(
-                        inv_vand_matrix[j][k],
-                        inv_vand_matrix[i][k],
-                    )
-                synds[j] = self.gf.add(synds[j], synds[i])
+                    print("inv_vand_matrix: mult", inv_vand_matrix)
+                    for k in range(nb_errors):
+                        inv_vand_matrix[j][k] = self.gf.add(
+                            inv_vand_matrix[j][k],
+                            inv_vand_matrix[i][k],
+                        )
+                    synds[j] = self.gf.add(synds[j], synds[i])
 
             print("inv vand after j rows:", inv_vand_matrix, synds)
             norm = inv_vand_matrix[i][i]
